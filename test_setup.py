@@ -8,6 +8,34 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
+
+def test_gpu():
+    """Test GPU availability."""
+    print("Testing GPU availability...")
+    
+    try:
+        import torch
+        print(f"  PyTorch version: {torch.__version__}")
+        print(f"  CUDA available: {torch.cuda.is_available()}")
+        
+        if torch.cuda.is_available():
+            print(f"  CUDA version: {torch.version.cuda}")
+            print(f"  GPU count: {torch.cuda.device_count()}")
+            for i in range(torch.cuda.device_count()):
+                print(f"    GPU {i}: {torch.cuda.get_device_name(i)}")
+                mem_total = torch.cuda.get_device_properties(i).total_memory / 1e9
+                print(f"      Total memory: {mem_total:.2f} GB")
+            print("✓ GPU is available and will be used for acceleration")
+        else:
+            print("✓ No GPU detected, will use CPU for Stage 0 only")
+            print("  Note: Stages 1-2 (vLLM) require GPU and will exit gracefully")
+        
+        return True
+    except Exception as e:
+        print(f"✗ Failed to check GPU: {e}")
+        return False
+
+
 def test_imports():
     """Test that all modules can be imported."""
     print("Testing imports...")

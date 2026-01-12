@@ -44,11 +44,22 @@ class BaseInferenceStage(ABC):
     def __init__(self, 
                  model_name: str,
                  precision: str = "bfloat16",
-                 device: str = "cuda",
+                 device: str = "auto",
                  stage_name: str = "base"):
         self.model_name = model_name
         self.precision = precision
-        self.device = device
+        
+        # Auto-detect device if not explicitly specified
+        if device == "auto":
+            if torch.cuda.is_available():
+                self.device = "cuda"
+                print(f"[{stage_name}] GPU detected: {torch.cuda.get_device_name(0)}")
+            else:
+                self.device = "cpu"
+                print(f"[{stage_name}] No GPU detected, using CPU")
+        else:
+            self.device = device
+            
         self.stage_name = stage_name
         self.model = None
         self.tokenizer = None

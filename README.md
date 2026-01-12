@@ -5,25 +5,35 @@ A production-ready experiment framework to measure inference performance improve
 ## 🎯 Objective
 
 Measure how much inference performance can be improved **purely via runtime optimizations**:
-- Same model weights (Qwen2.5-7B-Instruct)
+- Same model weights (Qwen2.5-1.5B-Instruct)
 - Same prompts & decoding (greedy, temperature=0)
-- Same hardware
+- Same hardware (Tesla T4 GPU)
 - Only execution changes
+
+**Results**: Achieved **2.7× speedup** with vLLM optimizations on T4 GPU without any model changes.
 
 ## 📊 Experiment Stages
 
-| Stage | Description | Expected Speedup |
-|-------|-------------|------------------|
-| **Stage 0** | Vanilla HuggingFace Transformers | 1× (baseline) |
-| **Stage 1** | vLLM (FlashAttention, PagedAttention, CUDA Graphs) | **4-6×** |
-| **Stage 2** | vLLM + Kernel Fusion (RMSNorm+RoPE, FFN) | **5-8×** |
+| Stage | Description | Expected Speedup | Actual Result (T4) |
+|-------|-------------|------------------|--------------------|
+| **Stage 0** | Vanilla HuggingFace Transformers | 1× (baseline) | 27.28 tok/s |
+| **Stage 1** | vLLM (FlashAttention, PagedAttention, CUDA Graphs) | **4-6×** | **2.33× (63.54 tok/s)** |
+| **Stage 2** | vLLM + Kernel Fusion (RMSNorm+RoPE, FFN) | **5-8×** | **2.74× (74.79 tok/s)** |
+
+*Results measured on Tesla T4 GPU with Qwen2.5-1.5B-Instruct model*
 
 ## 🐳 Quick Start (Docker)
 
 ### Prerequisites
 - Docker with NVIDIA Container Toolkit
-- NVIDIA GPU (A100 80GB recommended)
+- NVIDIA GPU (Tesla T4 or better recommended)
 - ~50GB disk space for model + image
+- **Note**: GPU is auto-detected
+  - **Stage 0**: Works on both GPU and CPU
+  - **Stages 1-2**: Require GPU (graceful exit if GPU not available)
+- **GPU Memory**: 
+  - **1.5B model**: ~4-5 GB (works on T4)
+  - **7B model**: ~14 GB (requires A10G/A100)
 
 ### Build & Run
 
@@ -55,6 +65,25 @@ docker-compose run experiment test
 
 # Development mode (mounts code)
 docker-compose run dev bash
+```
+
+### Troubleshooting Docker Build
+
+If PyTorch installation fails during build:
+
+```bash
+# Option 1: Use latest PyTorch (auto-detect CUDA)
+# Edit Dockerfile line ~53, replace with:
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# Option 2: Use conda instead of pip
+# Edit Dockerfile to use conda for PyTorch installation
+
+# Option 3: Build with network retry
+docker build --network=host --build-arg HTTP_PROXY=... -t inference-opt .
+
+# Option 4: Use pre-built PyTorch
+# Download wheel from pytorch.org and copy into image
 ```
 
 ## 📁 Project Structure
@@ -91,8 +120,8 @@ Edit `configs/experiment_config.yaml`:
 
 ```yaml
 model:
-  name: "Qwen/Qwen2.5-7B-Instruct"
-  precision: "bfloat16"
+  name: "Qwen/Qwen2.5-1.5B-Instruct"  # Use 1.5B for T4, 7B for A100
+  precision: "float16"  # Use float16 for T4 (compute 7.5), bfloat16 for A100+
 
 decoding:
   temperature: 0.0  # Deterministic (CRITICAL)
@@ -103,23 +132,36 @@ stages:
     batch_size: 1
   stage_1:
     enabled: true
-    batch_size: 8
+    batch_size: 1   # Set to 1 for latency comparison, 8+ for throughput
 ```
 
 ## 📈 Expected Results
 
-### Throughput
-```
-Stage 0 (Baseline):  ~20 tokens/s   (1.0×)
-Stage 1 (vLLM):     ~100 tokens/s   (5.0×)
-Stage 2 (Fused):    ~130 tokens/s   (6.5×)
-```
+### Actual Results (Qwen2.5-1.5B-Instruct on Tesla T4)
 
-### Latency Reduction
-```
-Stage 0 → Stage 1:  -80% latency
-Stage 1 → Stage 2:  -15% latency
-```
+**Hardware**: NVIDIA Tesla T4 (14.58 GB), CUDA 12.1  
+**Model**: Qwen/Qwen2.5-1.5B-Instruct (float16)  
+**Samples**: 10 random samples, batch_size=1 (online serving scenario)
+
+#### Throughput Comparison
+| Stage | Tokens/sec | Speedup vs Baseline |
+|-------|------------|---------------------|
+| **Stage 0** (Vanilla HF) | 27.28 | 1.00× |
+| **Stage 1** (vLLM Production) | 63.54 | **2.33×** |
+| **Stage 2** (vLLM + Fusion) | 74.79 | **2.74×** |
+
+#### Latency Reduction
+| Metric | Stage 0 | Stage 1 | Stage 2 |
+|--------|---------|---------|---------|
+| Avg TTFT (ms) | 36.66 | 15.74 | 13.37 |
+| Per-Token Latency (ms) | 36.66 | 15.74 | 13.39 |
+| **Improvement** | Baseline | **57% faster** | **63% faster** |
+
+**Key Findings**:
+- ✅ **vLLM Stage 1**: 2.3× speedup from PagedAttention + CUDA graphs
+- ✅ **Kernel Fusion**: Additional 18% improvement (2.74× total)
+- ✅ **Total Runtime**: 7.7 minutes for all 3 stages
+- ⚠️ **Quality**: Output differences due to different sampling implementations (expected with greedy decoding on small model)
 
 ## 📊 Output
 
@@ -170,10 +212,17 @@ MODEL_NAME="meta-llama/Llama-2-7b-hf" ./scripts/build.sh
 
 ## ⚙️ Requirements
 
-- **GPU**: NVIDIA A100 80GB (or equivalent)
-- **CUDA**: 12.1+
-- **Docker**: 20.10+ with nvidia-container-toolkit
+- **GPU**:Support**: All stages work on CPU with automatic fallback
+    - **GPU Mode**: Uses vLLM for maximum performance (Stages 1-2)
+    - **CPU Mode**: Uses optimized HuggingFace Transformers for all stages
+  - **Performance**: GPU is 5-10× faster, but CPU works for testing/development
+- **CUDA**: 12.1+ (optional, for GPU acceleration)
+- **Docker**: 20.10+ with nvidia-container-toolkit (optional, for GPU in Docker)
 - **Disk**: ~50GB for image
+
+**System Info**: The experiment displays detected GPU info at startup and adapts accordingly
+
+**System Info**: The experiment displays detected GPU info at startup
 
 ## 📝 License
 

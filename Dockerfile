@@ -49,11 +49,33 @@ WORKDIR /app
 # Copy requirements first for caching
 COPY requirements.txt .
 
-# Install PyTorch with CUDA support
-RUN pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch with CUDA 12.1 support
+# Using correct pip syntax: index-url before packages
+RUN pip install --no-cache-dir \
+    --default-timeout=1000 \
+    --retries 5 \
+    --index-url https://download.pytorch.org/whl/cu121 \
+    torch==2.1.2 torchvision==0.16.2
 
-# Install vLLM and other dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Verify PyTorch installation
+RUN python -c "import torch; print(f'PyTorch {torch.__version__} installed successfully')"
+
+# Install other dependencies
+RUN pip install --no-cache-dir \
+    transformers>=4.35.0 \
+    accelerate>=0.24.0 \
+    datasets>=2.14.0 \
+    huggingface-hub>=0.19.0 \
+    vllm>=0.2.6 \
+    triton>=2.1.0 \
+    pyyaml>=6.0 \
+    pandas>=2.0.0 \
+    numpy>=1.24.0 \
+    scipy>=1.11.0 \
+    matplotlib>=3.7.0 \
+    seaborn>=0.12.0 \
+    tqdm>=4.65.0 \
+    psutil>=5.9.0
 
 # Install additional tools for profiling
 RUN pip install --no-cache-dir \

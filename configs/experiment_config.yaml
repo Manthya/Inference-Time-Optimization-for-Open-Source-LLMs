@@ -3,8 +3,8 @@ experiment_name: "inference_optimization_qwen2.5_7b"
 
 # Model Configuration
 model:
-  name: "Qwen/Qwen2.5-7B-Instruct"
-  precision: "bfloat16"
+  name: "Qwen/Qwen2.5-1.5B-Instruct"  # Smaller model for T4 GPU (7B was too large)
+  precision: "float16"  # Changed from bfloat16 - Tesla T4 (compute 7.5) requires float16
   max_model_len: 8192
 
 # Decoding Configuration (FIXED - Deterministic)
@@ -52,17 +52,17 @@ metrics:
 # Stages to run
 stages:
   stage_0:
-    enabled: true
+    enabled: true  # Re-enabled - 1.5B model works fine on T4
     name: "Vanilla HF Transformers"
     batch_size: 1
   stage_1:
     enabled: true
     name: "vLLM Production"
-    batch_size: 8
+    batch_size: 1  # Fair comparison - online serving scenario
   stage_2:
     enabled: true
     name: "vLLM + Kernel Fusion"
-    batch_size: 8
+    batch_size: 1  # Fair comparison - online serving scenario
 
 # Output paths (Docker paths)
 output:

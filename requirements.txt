@@ -1,9 +1,10 @@
 # =============================================================================
 # Inference-Time Optimization Experiment - Dependencies
 # =============================================================================
+# Note: PyTorch is installed separately in Dockerfile with CUDA 12.1 support
 
 # Core ML frameworks
-torch>=2.1.0
+# torch>=2.1.0  # Installed separately with CUDA support in Dockerfile
 transformers>=4.35.0
 accelerate>=0.24.0
 

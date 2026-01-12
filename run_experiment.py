@@ -5,13 +5,39 @@ Orchestrates the entire inference optimization experiment.
 import yaml
 import time
 import argparse
+import random
+import json
 from pathlib import Path
 from typing import Dict, Any, List
 import torch
+from tqdm import tqdm
 
-from stages import Stage0Baseline, Stage1vLLM, Stage2FusedvLLM, InferenceResult
-from evaluation import DatasetLoader, EvalSample
-from metrics import MetricsCollector, QualityEvaluator, MetricsVisualizer
+from src.stages import Stage0Baseline, Stage1vLLM, Stage2FusedvLLM, InferenceResult
+from src.evaluation import DatasetLoader, EvalSample
+from src.metrics import MetricsCollector, QualityEvaluator, MetricsVisualizer
+
+
+def print_system_info():
+    """Print system and GPU information."""
+    print("\n" + "="*80)
+    print("System Information")
+    print("="*80)
+    print(f"PyTorch version: {torch.__version__}")
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    
+    if torch.cuda.is_available():
+        print(f"CUDA version: {torch.version.cuda}")
+        print(f"GPU count: {torch.cuda.device_count()}")
+        for i in range(torch.cuda.device_count()):
+            print(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
+            mem_total = torch.cuda.get_device_properties(i).total_memory / 1e9
+            print(f"    Total memory: {mem_total:.2f} GB")
+        print("All stages will use GPU acceleration with vLLM.")
+    else:
+        print("No CUDA GPU detected.")
+        print("  - Stage 0 (Baseline) can run on CPU")
+        print("  - Stages 1-2 (vLLM) require GPU and will exit gracefully if enabled")
+    print("="*80 + "\n")
 
 
 class ExperimentRunner:
@@ -59,10 +85,18 @@ class ExperimentRunner:
         print(f"Running {stage_name}")
         print(f"{'='*80}")
         
+        # Check for existing checkpoint
+        checkpoint_file = self._get_checkpoint_path(stage_name)
+        start_index, results, outputs = self._load_checkpoint(checkpoint_file)
+        
+        if start_index > 0:
+            print(f"[CHECKPOINT] Resuming from sample {start_index}/{len(eval_samples)}")
+        
         # Initialize stage
         stage = stage_class(
             model_name=self.config['model']['name'],
             precision=self.config['model']['precision'],
+            device="auto",  # Auto-detect GPU, fallback to CPU
         )
         
         # Load model
@@ -72,55 +106,188 @@ class ExperimentRunner:
         print(f"Model loaded in {load_time:.2f} seconds")
         
         # Run inference on all samples
-        results = []
-        outputs = []
-        
         batch_size = stage_config.get('batch_size', 1)
         num_samples = len(eval_samples)
         
         print(f"Running inference on {num_samples} samples (batch_size={batch_size})...")
-        
-        for i in range(0, num_samples, batch_size):
-            batch = eval_samples[i:i+batch_size]
-            prompts = [sample.prompt for sample in batch]
-            
-            # Generate
-            if batch_size == 1:
-                result = stage.generate(
-                    prompts[0],
-                    max_tokens=self.config['decoding']['max_tokens'],
-                    temperature=self.config['decoding']['temperature']
-                )
-                batch_results = [result]
-            else:
-                batch_results = stage.batch_generate(
-                    prompts,
-                    max_tokens=self.config['decoding']['max_tokens'],
-                    temperature=self.config['decoding']['temperature']
-                )
-            
-            results.extend(batch_results)
-            outputs.extend([r.generated_text for r in batch_results])
-            
-            # Progress
-            if (i // batch_size + 1) % 10 == 0:
-                print(f"  Processed {min(i+batch_size, num_samples)}/{num_samples} samples...")
+        # Use tqdm for progress bar
+        with tqdm(total=num_samples, desc=f"  {stage_name}", unit="sample", initial=start_index) as pbar:
+            for i in range(start_index, num_samples, batch_size):
+                batch = eval_samples[i:i+batch_size]
+                prompts = [sample.prompt for sample in batch]
+                
+                # Generate
+                if batch_size == 1:
+                    result = stage.generate(
+                        prompts[0],
+                        max_tokens=self.config['decoding']['max_tokens'],
+                        temperature=self.config['decoding']['temperature']
+                    )
+                    batch_results = [result]
+                else:
+                    batch_results = stage.batch_generate(
+                        prompts,
+                        max_tokens=self.config['decoding']['max_tokens'],
+                        temperature=self.config['decoding']['temperature']
+                    )
+                
+                results.extend(batch_results)
+                outputs.extend([r.generated_text for r in batch_results])
+                
+                # Update progress bar
+                pbar.update(len(batch))
+                
+                # Save checkpoint after each batch
+                self._save_checkpoint(checkpoint_file, stage_name, i + len(batch), results, outputs)
+                
+                # Clear GPU cache every 10 batches to prevent memory accumulation
+                if torch.cuda.is_available() and (i // batch_size + 1) % 10 == 0:
+                    torch.cuda.empty_cache()
         
         print(f"Completed {stage_name}")
+        
+        # Delete checkpoint file on successful completion
+        self._delete_checkpoint(checkpoint_file)
         
         # Cleanup
         stage.cleanup()
         
+        # Force garbage collection and GPU memory release
+        del stage
+        import gc
+        gc.collect()
+        gc.collect()  # Call twice for more thorough cleanup
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            # Reset peak memory stats to get clean slate
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.reset_accumulated_memory_stats()
+        
         return results, outputs
+    
+    def _get_checkpoint_path(self, stage_name: str) -> Path:
+        """Get checkpoint file path for a stage."""
+        output_dir = Path(self.config['output']['results_dir'])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        safe_stage_name = stage_name.replace(' ', '_').replace('/', '_')
+        return output_dir / f"{safe_stage_name}_checkpoint.json"
+    
+    def _load_checkpoint(self, checkpoint_file: Path) -> tuple:
+        """Load checkpoint if exists, return (start_index, results, outputs)."""
+        if not checkpoint_file.exists():
+            return 0, [], []
+        
+        try:
+            with open(checkpoint_file, 'r') as f:
+                checkpoint = json.load(f)
+            
+            # Reconstruct InferenceResult objects
+            results = []
+            for r in checkpoint.get('results', []):
+                result = InferenceResult(
+                    prompt=r['prompt'],
+                    generated_text=r['generated_text'],
+                    tokens_generated=r['tokens_generated'],
+                    time_to_first_token=r['time_to_first_token'],
+                    total_time=r['total_time'],
+                    per_token_latency=r['per_token_latency'],
+                    memory_used_mb=r.get('memory_used_mb', 0),
+                    gpu_memory_mb=r.get('gpu_memory_mb', 0)
+                )
+                results.append(result)
+            
+            outputs = checkpoint.get('outputs', [])
+            start_index = checkpoint.get('next_index', 0)
+            
+            return start_index, results, outputs
+        except Exception as e:
+            print(f"[WARNING] Failed to load checkpoint: {e}")
+            return 0, [], []
+    
+    def _save_checkpoint(self, checkpoint_file: Path, stage_name: str, 
+                        next_index: int, results: List[InferenceResult], outputs: List[str]):
+        """Save checkpoint after processing samples."""
+        # Convert InferenceResult to dict
+        results_dict = []
+        for r in results:
+            results_dict.append({
+                'prompt': r.prompt,
+                'generated_text': r.generated_text,
+                'tokens_generated': r.tokens_generated,
+                'time_to_first_token': r.time_to_first_token,
+                'total_time': r.total_time,
+                'per_token_latency': r.per_token_latency,
+                'memory_used_mb': r.memory_used_mb,
+                'gpu_memory_mb': r.gpu_memory_mb
+            })
+        
+        checkpoint = {
+            'stage_name': stage_name,
+            'next_index': next_index,
+            'results': results_dict,
+            'outputs': outputs,
+            'timestamp': time.time()
+        }
+        
+        with open(checkpoint_file, 'w') as f:
+            json.dump(checkpoint, f, indent=2)
+    
+    def _delete_checkpoint(self, checkpoint_file: Path):
+        """Delete checkpoint file after successful completion."""
+        if checkpoint_file.exists():
+            checkpoint_file.unlink()
+            print(f"[CHECKPOINT] Deleted checkpoint: {checkpoint_file.name}")
+    
+    def _save_stage_outputs(self, stage_name: str, eval_samples: List[EvalSample], outputs: List[str]) -> None:
+        """Save stage outputs to JSON file for quality analysis."""
+        output_dir = Path(self.config['output']['results_dir'])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create structured output data
+        output_data = {
+            'stage_name': stage_name,
+            'num_samples': len(outputs),
+            'samples': []
+        }
+        
+        for i, (sample, output) in enumerate(zip(eval_samples, outputs)):
+            output_data['samples'].append({
+                'sample_id': i,
+                'dataset': sample.dataset,  # Fixed: use 'dataset' not 'dataset_name'
+                'prompt': sample.prompt,
+                'reference': sample.expected_output if hasattr(sample, 'expected_output') else None,
+                'generated_output': output,
+                'output_length': len(output)
+            })
+        
+        # Save to JSON file
+        safe_stage_name = stage_name.replace(' ', '_').replace('/', '_')
+        output_file = output_dir / f"{safe_stage_name}_outputs.json"
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"Saved outputs: {output_file}")
     
     def run_all_stages(self) -> None:
         """Run all enabled stages in the experiment."""
+        
+        # Print system information
+        print_system_info()
         
         # Load evaluation datasets
         print("\n" + "="*80)
         print("Loading Evaluation Datasets")
         print("="*80)
         eval_samples = self.dataset_loader.load_all_datasets(self.config)
+        
+        # Use random subset for testing (10 samples)
+        random.seed(42)  # For reproducibility
+        num_test_samples = 10
+        if len(eval_samples) > num_test_samples:
+            eval_samples = random.sample(eval_samples, num_test_samples)
+            print(f"\n*** Using random subset of {num_test_samples} samples for testing ***\n")
         
         # Stage mapping
         stage_mapping = {
@@ -139,6 +306,30 @@ class ExperimentRunner:
                 results, outputs = self.run_stage(stage_class, stage_config, eval_samples)
                 self.all_stage_results[stage_config['name']] = results
                 self.all_stage_outputs[stage_config['name']] = outputs
+                
+                # Save outputs to file for quality analysis
+                self._save_stage_outputs(stage_config['name'], eval_samples, outputs)
+                
+                # Force cleanup between stages to free GPU memory
+                import gc
+                gc.collect()
+                gc.collect()  # Double collection for thorough cleanup
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                    # Additional cleanup: reset memory stats
+                    torch.cuda.reset_peak_memory_stats()
+                    torch.cuda.reset_accumulated_memory_stats()
+                    # Print GPU memory status
+                    mem_allocated = torch.cuda.memory_allocated() / 1e9
+                    mem_reserved = torch.cuda.memory_reserved() / 1e9
+                    mem_free = (torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_reserved()) / 1e9
+                    print(f"\nGPU Memory after {stage_config['name']}:")
+                    print(f"  Allocated: {mem_allocated:.2f} GB")
+                    print(f"  Reserved: {mem_reserved:.2f} GB")
+                    print(f"  Free: {mem_free:.2f} GB")
+                    print()
+                
             except Exception as e:
                 print(f"\nERROR in {stage_id}: {e}")
                 import traceback
@@ -219,14 +410,6 @@ class ExperimentRunner:
         print(f"Model: {self.config['model']['name']}")
         print(f"Precision: {self.config['model']['precision']}")
         print(f"Decoding: Temperature={self.config['decoding']['temperature']} (Greedy)")
-        
-        # Check GPU availability
-        if not torch.cuda.is_available():
-            print("\nWARNING: No GPU detected. This experiment requires a CUDA GPU.")
-            return
-        
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
-        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
         
         # Run experiment
         start_time = time.time()
