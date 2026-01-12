@@ -1,0 +1,121 @@
+# =============================================================================
+# Docker Compose for Inference Optimization Experiment
+# =============================================================================
+# Usage:
+#   docker-compose build          # Build the image
+#   docker-compose up             # Run experiment
+#   docker-compose run experiment bash  # Interactive shell
+# =============================================================================
+
+version: '3.8'
+
+services:
+  experiment:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODEL_NAME: "Qwen/Qwen2.5-7B-Instruct"
+    
+    image: inference-optimization:latest
+    container_name: inference-experiment
+    
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    # Environment
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - HF_HOME=/app/models
+      - TRANSFORMERS_CACHE=/app/models
+      - PYTHONPATH=/app
+    
+    # Mount results directory for output
+    volumes:
+      - ./results:/app/results
+      - ./configs:/app/configs:ro
+    
+    # Shared memory for PyTorch DataLoader
+    shm_size: '16gb'
+    
+    # Keep container running for debugging
+    stdin_open: true
+    tty: true
+    
+    # Default command
+    command: ["run"]
+
+  # Development container with code mounting
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODEL_NAME: "Qwen/Qwen2.5-7B-Instruct"
+    
+    image: inference-optimization:latest
+    container_name: inference-dev
+    
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - HF_HOME=/app/models
+      - PYTHONPATH=/app
+    
+    volumes:
+      - ./src:/app/src
+      - ./configs:/app/configs
+      - ./results:/app/results
+      - ./scripts:/app/scripts
+      - ./run_experiment.py:/app/run_experiment.py
+    
+    shm_size: '16gb'
+    stdin_open: true
+    tty: true
+    
+    command: ["bash"]
+
+  # Quick test container (reduced samples)
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    image: inference-optimization:latest
+    container_name: inference-test
+    
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - HF_HOME=/app/models
+      - PYTHONPATH=/app
+    
+    volumes:
+      - ./results:/app/results
+    
+    shm_size: '16gb'
+    
+    command: ["test"]

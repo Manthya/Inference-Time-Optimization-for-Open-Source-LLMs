@@ -1,0 +1,71 @@
+# Full Experiment Configuration (Docker)
+experiment_name: "inference_optimization_qwen2.5_7b"
+
+# Model Configuration
+model:
+  name: "Qwen/Qwen2.5-7B-Instruct"
+  precision: "bfloat16"
+  max_model_len: 8192
+
+# Decoding Configuration (FIXED - Deterministic)
+decoding:
+  temperature: 0.0  # CRITICAL: Greedy decoding only
+  top_k: -1  # Disabled
+  top_p: 1.0  # Disabled
+  max_tokens: 512
+  repetition_penalty: 1.0
+
+# Evaluation Datasets (pre-downloaded in Docker)
+datasets:
+  gsm8k:
+    enabled: true
+    path: "/app/data/gsm8k_test.json"
+    num_samples: 100
+  humaneval:
+    enabled: true
+    path: "/app/data/humaneval_test.json"
+    num_samples: 50
+  mmlu:
+    enabled: true
+    path: "/app/data/mmlu_test.json"
+    num_samples: 50
+  synthetic_long:
+    enabled: true
+    path: "/app/data/synthetic_long.json"
+    num_samples: 20
+
+# Performance Metrics
+metrics:
+  latency:
+    - time_to_first_token
+    - per_token_latency
+    - p50_latency
+    - p99_latency
+  throughput:
+    - tokens_per_second
+    - tokens_per_second_per_gpu
+  systems:
+    - gpu_utilization
+    - memory_usage
+    - kernel_launch_count
+
+# Stages to run
+stages:
+  stage_0:
+    enabled: true
+    name: "Vanilla HF Transformers"
+    batch_size: 1
+  stage_1:
+    enabled: true
+    name: "vLLM Production"
+    batch_size: 8
+  stage_2:
+    enabled: true
+    name: "vLLM + Kernel Fusion"
+    batch_size: 8
+
+# Output paths (Docker paths)
+output:
+  results_dir: "/app/results"
+  plots_dir: "/app/results/plots"
+  logs_dir: "/app/results/logs"
