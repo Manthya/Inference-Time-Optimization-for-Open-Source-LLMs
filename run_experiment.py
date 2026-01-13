@@ -110,7 +110,7 @@ class ExperimentRunner:
         num_samples = len(eval_samples)
         
         print(f"Running inference on {num_samples} samples (batch_size={batch_size})...")
-        # Use tqdm for progress bar
+        # Use tqdm for progress bara
         with tqdm(total=num_samples, desc=f"  {stage_name}", unit="sample", initial=start_index) as pbar:
             for i in range(start_index, num_samples, batch_size):
                 batch = eval_samples[i:i+batch_size]
@@ -240,35 +240,55 @@ class ExperimentRunner:
             print(f"[CHECKPOINT] Deleted checkpoint: {checkpoint_file.name}")
     
     def _save_stage_outputs(self, stage_name: str, eval_samples: List[EvalSample], outputs: List[str]) -> None:
-        """Save stage outputs to JSON file for quality analysis."""
+        """Save stage outputs to JSON file for quality analysis.
+        If file exists (from checkpoint resume), merge new outputs with existing ones."""
         output_dir = Path(self.config['output']['results_dir'])
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create structured output data
-        output_data = {
-            'stage_name': stage_name,
-            'num_samples': len(outputs),
-            'samples': []
-        }
+        # Safe filename
+        safe_stage_name = stage_name.replace(' ', '_').replace('/', '_')
+        output_file = output_dir / f"{safe_stage_name}_outputs.json"
         
+        # Load existing data if resuming from checkpoint
+        existing_data = {'samples': []}
+        if output_file.exists():
+            try:
+                with open(output_file, 'r', encoding='utf-8') as f:
+                    existing_data = json.load(f)
+                print(f"[DEBUG] Loaded {len(existing_data['samples'])} existing outputs from {output_file}")
+            except (json.JSONDecodeError, KeyError):
+                print(f"[WARNING] Could not load existing outputs, starting fresh")
+                existing_data = {'samples': []}
+        
+        # Create map of existing samples by sample_id for merging
+        existing_samples = {s['sample_id']: s for s in existing_data.get('samples', [])}
+        
+        # Add/update new outputs
         for i, (sample, output) in enumerate(zip(eval_samples, outputs)):
-            output_data['samples'].append({
+            sample_data = {
                 'sample_id': i,
-                'dataset': sample.dataset,  # Fixed: use 'dataset' not 'dataset_name'
+                'dataset': sample.dataset,
                 'prompt': sample.prompt,
                 'reference': sample.expected_output if hasattr(sample, 'expected_output') else None,
                 'generated_output': output,
                 'output_length': len(output)
-            })
+            }
+            existing_samples[i] = sample_data  # Update or add
         
-        # Save to JSON file
-        safe_stage_name = stage_name.replace(' ', '_').replace('/', '_')
-        output_file = output_dir / f"{safe_stage_name}_outputs.json"
+        # Sort by sample_id and create final output
+        sorted_samples = [existing_samples[i] for i in sorted(existing_samples.keys())]
         
+        output_data = {
+            'stage_name': stage_name,
+            'num_samples': len(sorted_samples),
+            'samples': sorted_samples
+        }
+        
+        # Save merged data
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(output_data, f, indent=2, ensure_ascii=False)
         
-        print(f"Saved outputs: {output_file}")
+        print(f"Saved {len(outputs)} outputs (total: {len(sorted_samples)}): {output_file}")
     
     def run_all_stages(self) -> None:
         """Run all enabled stages in the experiment."""
@@ -282,12 +302,7 @@ class ExperimentRunner:
         print("="*80)
         eval_samples = self.dataset_loader.load_all_datasets(self.config)
         
-        # Use random subset for testing (10 samples)
-        random.seed(42)  # For reproducibility
-        num_test_samples = 10
-        if len(eval_samples) > num_test_samples:
-            eval_samples = random.sample(eval_samples, num_test_samples)
-            print(f"\n*** Using random subset of {num_test_samples} samples for testing ***\n")
+        print(f"\n*** Running experiment with all {len(eval_samples)} samples ***\n")
         
         # Stage mapping
         stage_mapping = {
