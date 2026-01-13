@@ -1,0 +1,37 @@
+================================================================================
+Experiment Summary: inference_optimization_qwen2.5_7b
+================================================================================
+
+
+Vanilla HF Transformers
+----------------------------------------
+  Avg TTFT: 41.26 ms
+  Avg Per-Token Latency: 34.30 ms
+  Throughput: 27.60 tokens/s
+  Total Tokens: 66551
+  GPU Memory: 2953.53 MB
+
+vLLM Production
+----------------------------------------
+  Avg TTFT: 15.67 ms
+  Avg Per-Token Latency: 15.65 ms
+  Throughput: 63.84 tokens/s
+  Total Tokens: 70261
+  GPU Memory: 9.12 MB
+
+vLLM + Kernel Fusion
+----------------------------------------
+  Avg TTFT: 13.29 ms
+  Avg Per-Token Latency: 13.29 ms
+  Throughput: 75.24 tokens/s
+  Total Tokens: 70261
+  GPU Memory: 9.12 MB
+
+================================================================================
+Speedup Summary
+================================================================================
+
+             stage_name  ttft_speedup  throughput_speedup  latency_improvement
+Vanilla HF Transformers      1.000000            1.000000             0.000000
+        vLLM Production      2.633467            2.312900            54.383828
+   vLLM + Kernel Fusion      3.104184            2.726216            61.248576

@@ -41,6 +41,7 @@ services:
     volumes:
       - ./results:/app/results
       - ./configs:/app/configs:ro
+      - ./evaluate_quality.py:/app/evaluate_quality.py:ro
     
     # Shared memory for PyTorch DataLoader
     shm_size: '16gb'

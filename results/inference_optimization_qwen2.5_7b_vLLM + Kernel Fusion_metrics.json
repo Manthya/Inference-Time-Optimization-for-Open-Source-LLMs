@@ -1,0 +1,15 @@
+{
+  "stage_name": "vLLM + Kernel Fusion",
+  "avg_ttft": 0.013290762736630914,
+  "p50_ttft": 0.013263035511408948,
+  "p99_ttft": 0.013587922607997061,
+  "avg_per_token_latency": 0.01329268472602212,
+  "p50_per_token_latency": 0.013261579524121103,
+  "p99_per_token_latency": 0.013589882016700904,
+  "avg_total_time": 4.245260552432,
+  "avg_tokens_per_second": 75.24311687500753,
+  "total_tokens_generated": 70261,
+  "avg_memory_mb": 0.0,
+  "avg_gpu_memory_mb": 9.125,
+  "num_samples": 220
+}

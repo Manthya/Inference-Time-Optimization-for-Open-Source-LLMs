@@ -1,0 +1,15 @@
+{
+  "stage_name": "Vanilla HF Transformers",
+  "avg_ttft": 0.041256979175343045,
+  "p50_ttft": 0.03410232784117713,
+  "p99_ttft": 0.14286770045286176,
+  "avg_per_token_latency": 0.034302442361482124,
+  "p50_per_token_latency": 0.034049455875003076,
+  "p99_per_token_latency": 0.035294316927151674,
+  "avg_total_time": 10.376644734540895,
+  "avg_tokens_per_second": 27.59983963967992,
+  "total_tokens_generated": 66551,
+  "avg_memory_mb": 2.0507457386363637,
+  "avg_gpu_memory_mb": 2953.5344016335225,
+  "num_samples": 220
+}
