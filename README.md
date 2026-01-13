@@ -14,11 +14,11 @@ Measure how much inference performance can be improved **purely via runtime opti
 
 ## 📊 Experiment Stages
 
-| Stage | Description | Expected Speedup | Actual Result (T4) |
-|-------|-------------|------------------|--------------------|
-| **Stage 0** | Vanilla HuggingFace Transformers | 1× (baseline) | 27.60 tok/s |
-| **Stage 1** | vLLM (FlashAttention, PagedAttention, CUDA Graphs) | **4-6×** | **2.31× (63.84 tok/s)** |
-| **Stage 2** | vLLM + Kernel Fusion (RMSNorm+RoPE, FFN) | **5-8×** | **2.73× (75.24 tok/s)** |
+| Stage | Description | Result (T4) |
+|-------|-------------|------------|
+| **Stage 0** | Vanilla HuggingFace Transformers | 27.60 tok/s (baseline) |
+| **Stage 1** | vLLM (FlashAttention, PagedAttention, CUDA Graphs) | **2.31× speedup (63.84 tok/s)** |
+| **Stage 2** | vLLM + Kernel Fusion (RMSNorm+RoPE, FFN) | **2.73× speedup (75.24 tok/s)** |
 
 *Results measured on Tesla T4 GPU with Qwen2.5-1.5B-Instruct model (220 samples)*
 
@@ -133,15 +133,15 @@ stages:
     batch_size: 1   # Set to 1 for latency comparison, 8+ for throughput
 ```
 
-## 📈 Expected Results
+## 📈 Results
 
-### Actual Results (Qwen2.5-1.5B-Instruct on Tesla T4)
+### Inference Performance (Qwen2.5-1.5B-Instruct on Tesla T4)
 
 **Hardware**: NVIDIA Tesla T4 (14.58 GB), CUDA 12.1  
 **Model**: Qwen/Qwen2.5-1.5B-Instruct (float16)  
 **Samples**: 220 samples across GSM8K, HumanEval, MMLU, Synthetic datasets, batch_size=1
 
-#### Throughput Comparison (Final Results)
+#### Throughput Comparison
 | Stage | Tokens/sec | Avg Per-Token Latency | Speedup vs Baseline | Total Tokens |
 |-------|------------|----------------------|---------------------|--------------|
 | **Stage 0** (Vanilla HF) | 27.60 | 34.30 ms | 1.00× | 66,551 |
