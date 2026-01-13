@@ -58,6 +58,12 @@ case "$1" in
         python /app/test_setup.py
         ;;
     
+    evaluate)
+        echo "Running LLM-as-a-Judge quality evaluation..."
+        echo ""
+        python /app/evaluate_quality.py "${@:2}"
+        ;;
+    
     bash)
         echo "Starting interactive shell..."
         echo ""
@@ -73,6 +79,7 @@ case "$1" in
         echo "  stage0   - Run Stage 0 only (HF Baseline)"
         echo "  stage1   - Run Stage 1 only (vLLM)"
         echo "  stage2   - Run Stage 2 only (vLLM + Fusion)"
+        echo "  evaluate - Run LLM-as-a-Judge quality evaluation"
         echo "  verify   - Verify setup and dependencies"
         echo "  bash     - Start interactive shell"
         echo ""

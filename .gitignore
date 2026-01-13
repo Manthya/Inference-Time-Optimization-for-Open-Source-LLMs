@@ -26,7 +26,6 @@ wheels/
 # Data and results
 data/*
 !data/.gitkeep
-results/*
 !results/.gitkeep
 
 # Model checkpoints

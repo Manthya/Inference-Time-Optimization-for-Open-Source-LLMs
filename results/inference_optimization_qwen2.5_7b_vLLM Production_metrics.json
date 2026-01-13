@@ -1,0 +1,15 @@
+{
+  "stage_name": "vLLM Production",
+  "avg_ttft": 0.015666413483721373,
+  "p50_ttft": 0.01562291244482861,
+  "p99_ttft": 0.016107572245529254,
+  "avg_per_token_latency": 0.01564746096608365,
+  "p50_per_token_latency": 0.015615050082033122,
+  "p99_per_token_latency": 0.015933002205519818,
+  "avg_total_time": 4.997301158809106,
+  "avg_tokens_per_second": 63.83565834172806,
+  "total_tokens_generated": 70261,
+  "avg_memory_mb": 0.0,
+  "avg_gpu_memory_mb": 9.125,
+  "num_samples": 220
+}
