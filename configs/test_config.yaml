@@ -1,0 +1,61 @@
+# Quick Test Configuration (Reduced Samples)
+# Use this for testing the setup before running the full experiment
+experiment_name: "test_run"
+
+# Model Configuration
+model:
+  name: "Qwen/Qwen2.5-7B-Instruct"
+  precision: "bfloat16"
+  max_model_len: 4096  # Reduced for testing
+
+# Decoding Configuration (FIXED - Deterministic)
+decoding:
+  temperature: 0.0
+  top_k: -1
+  top_p: 1.0
+  max_tokens: 128  # Reduced for testing
+  repetition_penalty: 1.0
+
+# Reduced Datasets for Testing
+datasets:
+  gsm8k:
+    enabled: true
+    num_samples: 5
+  humaneval:
+    enabled: true
+    num_samples: 5
+  mmlu:
+    enabled: true
+    num_samples: 5
+  synthetic_long:
+    enabled: true
+    num_samples: 2
+
+# Performance Metrics
+metrics:
+  latency:
+    - time_to_first_token
+    - per_token_latency
+  throughput:
+    - tokens_per_second
+
+# Only run fast stages for testing
+stages:
+  stage_0:
+    enabled: false  # Skip slow baseline for quick test
+    name: "Vanilla HF Transformers"
+    batch_size: 1
+  stage_1:
+    enabled: true
+    name: "vLLM Production"
+    batch_size: 4
+  stage_2:
+    enabled: true
+    name: "vLLM + Kernel Fusion"
+    batch_size: 4
+
+# Output paths
+output:
+  results_dir: "/app/results"
+  plots_dir: "/app/results/plots"
+  logs_dir: "/app/results/logs"
