@@ -546,31 +546,6 @@ if __name__ == "__main__":
     create_report()
 
 
-def load_results():
-    """Load all experimental results."""
-    results_dir = Path("./results")
-    
-    # Load metrics
-    with open(results_dir / "inference_optimization_qwen2.5_7b_Vanilla HF Transformers_metrics.json") as f:
-        stage0_metrics = json.load(f)
-    
-    with open(results_dir / "inference_optimization_qwen2.5_7b_vLLM Production_metrics.json") as f:
-        stage1_metrics = json.load(f)
-    
-    with open(results_dir / "inference_optimization_qwen2.5_7b_vLLM + Kernel Fusion_metrics.json") as f:
-        stage2_metrics = json.load(f)
-    
-    # Load comparison CSV
-    comparison_df = pd.read_csv(results_dir / "inference_optimization_qwen2.5_7b_comparison.csv")
-    
-    return {
-        'stage0': stage0_metrics,
-        'stage1': stage1_metrics,
-        'stage2': stage2_metrics,
-        'comparison': comparison_df
-    }
-
-
 def create_report():
     """Generate the PDF report."""
     
